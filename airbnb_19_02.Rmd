@@ -1,0 +1,1391 @@
+---
+title: "Les annonces Airbnb"
+author: |
+  | HOUNKONNOU Mehdy et MENENDEZ Benjamin
+  | Université de Bordeaux  
+  | Master Modélisation Statistique et Stochastique
+  
+output: 
+  html_document : 
+    toc : true
+    toc_float : true
+    theme : united 
+    highlight : tango 
+    number_sections : true
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+editor_options: 
+  chunk_output_type: console
+---
+
+![.](11.png)   
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r echo=FALSE, include = FALSE}
+library(dplyr)
+library(plotly)
+library(tidyr)
+library(lubridate)
+library(readr)
+library(ggplot2)
+library(missMDA)
+library(gridExtra)
+library(leaflet)
+library(purrr)
+library(stringr)
+library(ggthemes)
+library(cowplot)
+library(hrbrthemes)
+library(tidyverse)
+library(rjson)
+library(sf)
+library(tmap)
+library(sp)
+library(rgdal)
+library(raster)
+library(plotKML)
+library(mapview)
+library(tidytext)
+library(RColorBrewer)
+library(caret)
+library(randomForest)
+library(tm)
+library(vip)
+library(googleLanguageR)
+library(cld2)
+library(tokenizers)
+library(lexicon)
+library(textdata)
+```
+
+
+Introduction
+
+1 - Quelques stats descriptives pour de l’analyse  OK
+  A - Premiers pas… les données 
+  B - Fréquence de distribution OK
+  
+2 - Etude complète sur la constitution d’un prix OK
+  A - Prix en fonction de la localisation, du quartier OK
+  B - Prix en fonction du type de biens et capacité d’accueil OK
+  C - Prix en fonction des commodités OK
+  D - MODELE LINEAIRE PRIX reg lineaire.... + catégorie de prix
+  
+3 - Etude des liens avec le marché locatif COMMENTAIRE COMPLET A FAIRE
+
+4 - Etude textuel 
+  A - Etude sur le nom des annonces Airbnb 
+  B - Etude et analyse des sentiments
+  C - Modélisation entre sentiments et prix
+
+
+Conclusion
+
+```{r echo=FALSE, include = FALSE}
+#BORDEAUX 
+listings_bordeaux_brut <- read.csv("Bordeaux/listings_brut_bordeaux.csv")
+listings_bordeaux_1 <- read.csv("Bordeaux/listings_bordeaux.csv")
+reviews_bordeaux <- read.csv("Bordeaux/reviews_bordeaux.csv", comment.char="#")
+#loyer_bordeaux <- read.csv2("~/Desktop/M2 :: MSS/Projet Donnees Massives/Projet Airbnb/Bordeaux /Base_OP_2019_L3300/Base_OP_2019_L3300.csv")
+#load(file = "Mehbenjvendredi.RData")
+```
+
+# Introduction 
+
+Airbnb est une société américaine de location de vacances en ligne basée à San Francisco, en Californie. Airbnb maintient et héberge une "place de marché", accessible aux consommateurs sur son site web ou via une application. 
+Grâce à ce service, les utilisateurs peuvent organiser des hébergements, principalement des séjours en famille d'accueil, et des expériences touristiques, mais encore répertorier leurs propriétés à louer. Airbnb ne possède aucune des propriétés répertoriées ; au contraire, elle tire profit de la commission qu'elle perçoit sur chaque réservation. La société a été fondée en 2008 par Brian Chesky, Nathan Blecharczyk et Joe Gebbia. Airbnb est une version abrégée de son nom original, AirBedandBreakfast.com. 
+
+L'objectif principal de ce projet d'open DATA est de croiser différentes bases de données, c'est-à-dire les mettre en relation afin d'être capable d'en tirer de nouvelles informations. Nous voulons, à travers ce travail, d'une part comprendre dans son intégralité la façon dont le prix d'un bien et obtenus, et d'autre part, être capable de proposer le meilleur bien selon l'envie du client. Pour ce faire, nous utiliserons donc plusieurs bases de données, tous d'abord nous disposons du détail des offres Airbnb disponibles dans les villes françaises de Bordeaux. Ensuite nous disposons de la base de données regroupant le prix du marché immobilier où nous nous concentrerons particulièrement sur le marché locatif. Nous avons également à disposition la base de données des réservations des bien Airbnb pour l'année 2021, et enfin nous avons une grosse base de données regroupant une multitude d'avis client sur les biens Airbnb. 
+
+Dans un premier temps nous voudrions être capable de découvrir quels sont les facteurs qui influencent le prix de la nuit d'une réservation Airbnb. Pour ce faire nous regarderons attentivement l'ensemble des variables qui influent sur le prix de la location. Nous nous attendons à ce que la position géographique, le quartier, le type de chambre ou de logement, le nombre de salles de bains, la notation des clients soient de puissants prédicteurs.
+Dans un second temps, nous allons nous concentrer sur la description du bien airbnb proposée par le propriétaire. En effet, cette information est une des clefs pour comprendre la représentativité des biens disponibles. Dans cette section nous utiliserons des méthodes et outils de traitement du language pour en tirer des informations pertinentes. 
+De plus, nous voulons proposer un outil de visualisation simple et intuitive qui permettrait de mettre en relation nos bases de données, cet outil se présentera sous forme d'une carte interactive. Nous pourrions ainsi détecter au mieux certains biens Airbnb dit "hors du marché", on retrouverait par exemple les biens d'exceptions. Nous pourrions être capables, au sein d’un même quartier, de déterminer le type de bien qui fonctionne et qui anime les réservations. Ce travail nous permettrait peu d'être de mettre en relation les différents quartiers et les caractéristiques des consommateurs qui réservent.
+Enfin, nous utiliserons notre jeu de données regroupant l'ensemble des avis clients sur les biens loués, afin d'en extraire l'idée, le sentiment général, celui qui reste en tête. Cette dernière analyse, faisant également appel aux notions de traitement de language, nous permettra de connaitre le type de biens qui fonctionne à travers une analyse sentimental des commentaire client. 
+
+# Quelques stats descpriptives pour de l'analyse
+## Premiers pas... les données
+
+Airbnb, comme beaucoup d'autre web service, tient à ce que ses données restent privées et elle ne permet pas aux internautes d'accéder à leurs données en Opendata.
+Toutefois, Murray Cox, un photojournaliste australien, est parvenu à rendre certaines données de la plateforme en libre accès. Ainsi, par le biais de son site insideAirbnb, ce dernier permet l'accès à de larges tables de données concernant une quarantaine de villes dans le monde. Une telle alternative est appréciée par la communauté des data scientists et permet alors de mieux comprendre comment se comporte le phénomène Airbnb au sein même d'une ville mais également sur le plan international.
+Nous nous intéressons exclusivement aux données de la ville de Bordeaux, à partir du jeu de données brutes, nous sélectionnons les variables qui nous semble utile dans cette première analyse et pour expliquer le prix. Nous avons selectioné ces variables : 
+
+  - price: C'est le prix du biens Airbnb pour une nuit, ici notre variable cible. 
+  - latitude and longitude: C'est l'infortmation géographique du biens Airbnb. 
+  - neighbourhood_cleansed: C'est le nom du quartier où se trouve le biens Airbnb.
+  - neighbourhood_group_cleansed : C'est le nom de la ville où es trouve le biens Airbnb.
+  - room_type: C'est le type du biens Airbnb : Entire home/apt, Private room and Shared room
+  - accommodates: C'est le nombre de personnes que le biens Airbnb peut recevoir. 
+  - beds: C'est le nombre de couchage du biens Airbnb.
+  - review_scores_rating: C'est la note moyenne du biens Airbnb donnée par les locataires.
+  - amentities: Ce sont l'ensemble des comoditées du biens Airbnb
+  
+La deuxieme partie de notre projet s'interressera aux  commentaires de tous les locataires de l'année 2019 à l'année 2020. Nos variables d'interet sont donc : 
+  - listing_id : identifiant qui nous permet de faire le lien entre les commentaires et les caractéristiques du bien loué
+  - date : la date des commentaires 
+  - comments : les commentaires des locataires
+  - reviewer_name : Prénom du locataire
+  
+De plus, nous avons utilisé par la suite une base de données contenant le prix des loyer par ville et par quartier. L'objetcif avec cette base de données est de mettre en relation le marché locatif et le marché des biens Airbnb. Elle est cosntitué comme suit : 
+
+  - Base_OP_AAAA_LXXXX.csv : Ce fichier fourni les statistiques sur le niveau des loyers du parc locatif privé au 01/01/AAAA. 
+    Elles sont fournies à l’échelle de l’agglomération, de différentes zones géographiques plus fines ainsi qu’à l’échelle de la ville centre et de sa périphérie (pour certaines     agglomérations). 
+
+  - Les fichiers KML permettent d’afficher sur une carte à partir d’un logiciel de SIG les contours du périmètre d’observation « LXXXX_agglo_AAAA.kml », des zones géographiques     « LXXXX_zone_cal_AAAA_1.kml », de la ville centre et sa périphérie « LXXXX_zone_compl_AAAA.kml » et des communes « LXXXX_zone_elem_AAAA.kml »
+    
+```{r}
+load(file="lol.RData")
+data_bordeaux <- listings_bordeaux_brut %>% dplyr::select(latitude,longitude,neighbourhood_cleansed, neighbourhood_group_cleansed, room_type, accommodates, beds, price, review_scores_rating,amenities)
+
+data_bordeaux$price <- as.character(data_bordeaux$price)
+data_bordeaux$neighbourhood_cleansed <- as.character(data_bordeaux$neighbourhood_cleansed)
+data_bordeaux$neighbourhood_group_cleansed <- as.character(data_bordeaux$neighbourhood_group_cleansed)
+data_bordeaux$amenities <- as.character(data_bordeaux$amenities)
+data_bordeaux$price <- parse_number(data_bordeaux$price)
+#data_bordeaux %>% str
+```
+  
+## Fréquence de distribution
+
+Les analyses descriptives sont les premières manipulations à effectuées dans une étude quantitative, leur objectif principal est de résumer et d'explorer le comportement des données impliquées dans l'étude. En utilisant des techniques statistiques telles que la distribution des fréquences, les mesures de tendance et les mesures de dispersion, nous pouvons mieux comprendre la façon dont les phénomènes étudiés se comportent.
+
+Il faut tout d'abord s'occuper de nettoyer notre jeu de données. Pour les variables catégorielles dites "simple" telles que le quartier, la ville,  le nombre de couchage, ...,  ne nécessite pas de traitement particulier. En revanche il faut s'assurer que les valeurs extrêmes n'affectent pas nos résultats, nous gérons égalementlesvaleurs manquantes en supprimant les biens trop affectés par des valeurs manquantes.
+Premièrement, nous nous concentrons sur la répartitions des biens Airbnb en fonction de la ville. 
+
+```{r}
+#Fréquence, nombre et % en fonction de la ville 
+freq_location <- data.frame(cbind(Frequency = table(data_bordeaux$neighbourhood_group_cleansed
+                                            ), Percent = prop.table(table(data_bordeaux$neighbourhood_group_cleansed)) * 100))
+freq_location <- freq_location[order(freq_location$Frequency, decreasing = TRUE),]
+head(freq_location)
+```
+
+Nous remarquons directement, au vu des résultats et de façon logique, que la grande majorité des biens Airbnb (près de 65% des biens) se trouve dans la ville de Bordeaux.
+Les villes avec le plus grand nombre de biens sont ensuite, Mérignac, avec près de 5% des biens Airbnb, grande ville avec l'aéroport de la zone, ce qui justifie grandement ce resultat. Talence, avec près de 4,4% des biens Airbnb, une grande ville connu pour sa grande activité étudiante principalement. 
+
+Pour obtenir des résutats plus parlant, nous proposons une representation par quartier et non plus par ville. Ce point de vu nous permet alors que comprendre mieux comment sont répartie les biens au sein de la ville  centre qui est Bordeaux. Ci-dessous le graphe représantant le top 10 des quartiers/zones les plus représentées sur Airbnb. 
+
+```{r}
+#Fréquence, nombre et % en fonction du quartier
+freq_area <- data.frame(cbind(Frequency = table(data_bordeaux$neighbourhood_cleansed), Percent = prop.table(table(data_bordeaux$neighbourhood_cleansed)) * 100))
+freq_area <- freq_area[order(freq_area$Frequency),]
+
+tema <- theme(plot.title = element_text(size = 10, hjust = .5),
+              axis.text.x = element_text(size = 5, angle=30),
+              axis.text.y = element_text(size = 10, angle=10, face = "bold"),
+              axis.title.x = element_text(size = 10),
+              axis.title.y = element_text(size = 10),
+              legend.text = element_text(size = 10, face = "bold"))
+
+df <- data.frame(neighbourhood = row.names(tail(freq_area, 10)), Frequency = tail(freq_area, 10)$Frequency)
+
+options(repr.plot.width=5, repr.plot.height=5)
+ggplot(data = df, mapping = aes(x = neighbourhood, y = Frequency)) +
+    theme_minimal() + 
+    geom_point(size = 2, color = "green") +
+    ggtitle("Top 10 des quartiers les plus représentés") +
+    xlab("") +
+    geom_line(color = "black", size = 1, linetype= 16, group = 1, alpha = .5) + 
+    geom_bar(stat = "identity", mapping = aes(fill = neighbourhood, color = neighbourhood), alpha = .3, size = 1) +   
+    tema
+```
+
+Comme attendu, le fait de regarder par quartier de façon plus precise nous permet de savoir comment sont répartie les biens, principalement dans la ville de Bordeaux. 
+Il en ressort la très fortes activité du centre ville de Bordeaux, avec près de 18% des biens. Le sud de Bordeaux est également tres important avec pres de 15% des biens Airbnb. 
+Nous retrouvopns ensuite des quartiers comme celui des Chartrons - Grand Parc - Jardin Public, Nasouty, Bordeaux Maritime, regroupant entre 5et 10% des biens Airbnb.
+Pour mieux voir et comprendre ce qui se designe derrière cette distributions, nous representons un top 10 des quartiers les plus présent sur le site Airbnb. 
+
+```{r}
+th <- theme_fivethirtyeight() + theme(axis.title = element_text(), axis.title.x = element_text())
+#Fréquence, nombre et % en fonction du type de bien
+freq_type <- data.frame(cbind(Frequency = table(data_bordeaux$room_type), Percent = prop.table(table(data_bordeaux$room_type)) * 100))
+freq_type <- freq_type[order(freq_type$Frequency),]
+
+
+options(repr.plot.width=5, repr.plot.height=5)
+a <- ggplot(data = freq_type, mapping = aes(x = Frequency, y = row.names(freq_type))) +
+         geom_bar(stat = "identity", mapping = aes(fill = row.names(freq_type), color = row.names(freq_type)), alpha = .7, size = 1) +
+         geom_label(mapping = aes(label=Frequency), fill = "#006400", size = 4, color = "white", fontface = "bold", hjust=.7) +
+         ylab("") +
+         ggtitle("Distribution des types de biens") +
+         theme_economist() +
+         th
+
+a
+```
+
+Parlons prix, c'est le nerf de la guerre puisque qu'il agrège à lui seul toutes les caractéristiques du biens et permet au client de faire son choix en fonction de son budget. C'est l'élément le plus essentiel sur un site de location de biens puisqu'il est capable de déclencher une reservation. Concernant sa distribution des prix, nous tracons l'histogramme des prix pour l'ensemble des biens considérés. 
+
+```{r}
+ggplot(data_bordeaux, aes(price)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "purple") + 
+  geom_density(alpha = 0.2, fill = "purple") +
+  th +
+  ggtitle("Distribution des prix",
+          subtitle = "Une répartition très inégale") +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  geom_vline(xintercept = round(mean(data_bordeaux$price), 2), size = 2, linetype = 3)
+```
+
+En tracant la répartition des prix, nous remarquons une forte amplitude sur les prix, avec une enorme concentration pour les prix entre 0 et 250 euros la nuit. Nous nous rendons bien compte que les biens d'exeption influent complètement sur ce type de graphe avec des prix par nuit explosant pour atteindre pres de 8000 euros la nuit. Comme la distribution originale est très asymétrique, la transformation logarithmique peut être utilisée pour obtenir un meilleur aperçu des données.
+
+```{r}
+#Transformation de variable
+data_bordeaux <- data_bordeaux %>% mutate(Log1pPrice = log1p(price))
+
+#Gaphioque 
+ggplot(data_bordeaux, aes(price)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "purple") + 
+  geom_density(alpha = 0.2, fill = "purple") +
+  th +
+  ggtitle("Distribution des prix transformés",
+          subtitle = expression("Avec transformation" ~'log'[10] ~ "des prix")) +
+  geom_vline(xintercept = round(mean(data_bordeaux$price), 2), size = 2, linetype = 3) +
+  scale_x_log10()
+```
+
+Nous obtenons alors une meilleur distribution avec un prix moyen de 90 euros, notons que même avec cette transformation, la quasi totalitées des biesn se trouvent dans une meme tranche de prix. Ce reésultats reste rassurant car une location se trouvera toujours dans une meme tranche de prix, avec des biens exeptionnels bien plus cher mais en très petite quantitées. 
+
+# Etude complète sur la constitution d'un prix 
+
+
+Le prix est, comme nous l'avons dit, la varibale cible, il est important de pousser l'analyse plus loin, nous nous sommes donc intérogé sur les varibales autre que le prix dans le listing de nos biens Airbnb pour comprendre au mieux ce qui impact significativement le prix. 
+Pour ce faire nous representons l'importance des variables dans notre modèle en utilisant  une forêt alétoire. Les paramètres choisis sont standards avec un nombre de 500 arbres et un mtry de 2. Notons qu'un découpage apprentissage/test a également été effectué. 
+
+```{r eval=FALSE, include=FALSE}
+#Entraînement 
+#On enlève logprice 
+data_bordeaux <-data_bordeaux[,-3] %>% drop_na()
+s = sample_n(data_bordeaux[,-11], size = 1000, replace = TRUE)
+trainIndex <- caret::createDataPartition(s$price, p = .75, 
+                                  list = FALSE, times = 1)
+train = s[trainIndex, ]; #class(train)
+test = s[-trainIndex, ]; #class(test)
+
+#Echantillon Test et Train 
+x_train <- train[-1]
+x_test <- test[-1] 
+y_train <- train$price 
+y_test <- test$price
+
+#Foret Aléatoire
+set.seed(123) 
+m.randomForest <- randomForest(price ~., data = train, ntrees = 500, mtry = 2)
+
+#Importance des varibales 
+vip::vip(m.randomForest) + theme_bw(base_size = 18) + labs(title = "Variable importance") + th
+```
+
+A l'aide du package RandomForest, nous sommes en mesure d'afficher un tel graphe qui nous indique, pour notre modèle, que le prix est principalement impacté par le nombre de personnes qu'il peut acceuillir. Ce resultats est tout à fait cohérent voir évident, plus le logement permet d'acceuilir de personnes, plus il est cher. Dans ce sens, on a aussi le nombre de couchage disponible qui fait grimper le pric de façon significative. 
+Bien évidement, la localisation exacte ainsi que le quartier et la ville à aussi un gros impacte sur le prix. Enfin, les commodités, le type de biens et le score donné par les usagers sont des élemetns important dans la constitution du prix de la nuité. 
+
+## Prix en fonction de la localisation, du quartier
+
+Dans cette section, et pour faire echos à ce que nous avons vu juste precédement, nous allons voir le lien entre le prix du biens Airbnb et sa localisation, c'est à dire de à la longitude et latitidue du biens considéré, mais également de son quartier.
+Cette analyse nous permettra d'obtenir des réponses intéressantes, telles que "Quels sont les 10 quartiers les plus chers à réserver sur airbnb ?", "Quels sont les 10 quartiers les moins chers à réserver sur airbnb ?", "Quels sont les 10 quartiers/villes adjacentes les plus reservées sur airbnb?". Tout cela avec des graphiques très attrayants et informatifs que nous allons voir par la suite. 
+
+
+```{r}
+#Theme graphique 
+tema <- theme(
+              plot.title = element_text(size = 8),
+              axis.text.x = element_text(size = 8, face = "bold"),
+              axis.text.y = element_text(size = 8, face = "bold"),
+              axis.title.x = element_text(size = 8),
+              axis.title.y = element_text(size = 8),
+              legend.position = "v")
+
+#Graphique + chère
+options(repr.plot.width=10, repr.plot.height=10)
+a <- ggplot(data = top_10_neighbourhood, mapping = aes(x = Quartier, y = Prix_moyen_par_quartier)) +
+     geom_bar(stat = "identity", mapping = aes(fill = Quartier, color = Quartier), alpha = .8, size = 1) +
+     geom_label(mapping = aes(label = round(Prix_moyen_par_quartier, 2)), size = 3, fill = "#F5FFFA", fontface = "bold") +
+     coord_flip() +
+     th + 
+     ggtitle("Top 10 des quartier les PLUS chères") +
+     xlab("") +
+     ylab("") + tema
+
+#Graphique - chère
+options(repr.plot.width=15, repr.plot.height=6.5)
+c <- ggplot(data = top_10_neighbourhood_b, mapping = aes(x = Quartier, y = Prix_moyen_par_quartier)) +
+     geom_bar(stat = "identity", mapping = aes(fill = Quartier, color = Quartier), alpha = .8, size = 1) +
+     geom_label(mapping = aes(label = round(Prix_moyen_par_quartier, 2)), size = 3, fill = "#F5FFFA", fontface = "bold") +
+     coord_flip() +
+     th + 
+     ggtitle("Top 10 des quartier les MOINS chères") +
+     xlab("") +
+     ylab("") +tema
+
+plot_grid(a, c, ncol=2, nrow=1, scale =  0.9)
+```
+
+Le graphe ci-dessus nous indique le top 10 des quartiers ayant à la fois les prix de réservation les plus chères de la région mais également les moins chères.Lorsque l'on observe le top 10 des quartiers les plus chères, nous pouvons nous pencher sur les quartiers tels que Toctoucau, le Monteil et Bouliac. Pour comprendre ce qui caractérise ces quartiers chers, il est important de les étudier à l'aide de données démographiques. 
+
+- Toctoucau, avec un prix moyen par nuit de 169 euros, est un quartier de la commune de Pessac (33600). Ce quartier, au paysage verdoyant et à l'ambiance calme, abrite 2585 habitants qui ont une moyenne d'âge de 39 ans, ont des revenus confortables, vivent majoritairement en famille, et sont principalement propriétaires de leur logement.
+
+- Le Monteil, avec un prix moyen par nuit de 167 euros, est un quartier de la commune de Pessac (33600). Ce quartier, au paysage urbain et à l'ambiance animée, abrite 3262 habitants qui ont une moyenne d'âge de 40 ans, ont des revenus confortables, vivent majoritairement en célibataire, et sont principalement locataires de leur logement. Le quartier dispose, aux alentours, de divers services et infrastructures de transport, de commerce, de loisir, de culture, de santé, d'éducation.
+
+- Bouliac quant à elle, avec un prix moyen par nuit de 168 euros, est une commune calme du département de la Gironde (33270). Les 3040 habitants sont en majorité des couples et célibataires. Ils sont plutôt propriétaires de leur logement (64 %) et ont des revenus aisés (41100 euros par ménage).
+
+De cette analyse il en ressort de façons cohérentes que ces quartiers sont des zones où le confort est bon, avec un nombre d'habitants raisonnables autour des  3000 personnes. Les infrastructures de santé ou d'éducation y sont particulièrement bien représenté ce qui favorise une population aisée.
+De plus, il est intéressant de noter que pour quasiment tous les quartiers de ce top 10, les espaces sont grands, dans cette optique, les biens mis à disposition des utilisateurs Airbnb sont pour la grande majorité des maisons avec de grande et belle superficie. Nous comprenons alors bien comment ces quartiers se retrouvent avec des prix moyens  les plus élevés. 
+
+
+Pour les quartiers les plus accessibles, nous pouvons réaliser le même travail pour essayer d'expliquer ces prix à partir de données démographiques. Concentrons-nous sur les quartiers de la Saige, le quartier de Beaudésert et enfin le quartier du Burck. 
+
+- Saige est une zone industrielle de la commune de Pessac (33600). Les 5130 habitants sont en majorité des couples et célibataires. Ils sont très jeunes, locataires de leur logement (83 %) et ont des très petits revenus (19400 euros par ménage). Il y a de très nombreux HLM (63 %).
+
+- Le Burck est un quartier de la commune de Mérignac (33700). Ce quartier, au paysage verdoyant et à l'ambiance calme, abrite 1833 habitants qui ont une moyenne d'âge de 36 ans, ont des revenus modérés, vivent majoritairement en célibataire, et sont principalement locataires de leur logement. Le quartier dispose, aux alentours, de divers services et infrastructures de transport, de sport, de loisir, de culture, d'éducation.
+
+- Beaudésert est un quartier de 2 560 habitants de la ville de Mérignac dont 70 % des habitants sont locataires. Beaudésert est un quartier calme avec 57 % d'appartements et 43 % de maisons. Il y a 50 commerces de proximité dont des commerces, des restaurants et un supermarché.
+
+Là encore, il ressort de cette analyse de façon cohérente que ce sont des zones où le confort est moins présent. Bien que nombres d'habitants sont similaires, il y a bien plus d'appartement et de personne en situation de location, avec des situations plus précaires, ce sont des espaces plus petits où la vie est agréable certes, mais avec une concentration de gens avec des revenus plus faibles. De la même façon qu'avec les quartiers riches, le prix des Airbnb est directement impacté par le contexte démographique qui définit la zone.
+
+En somme, ce qui semble impacter de façon très significative le prix des Airbnb est d'un part la qualité du bien proposé. En effet plus un bien dispose de grands espaces plus il sera chere, mais pour un bien de même superficie, le contexte démographique sera toujours un critère déterminant. Ces analyses restent très cohérentes puisque dans le cadre d'une location Airbnb, on imagine aisément que le choix du quartier est un critère prépondérant pour les clients qui souhaite
+passer un agréable moment dans les lieux, mais également aux alentours. 
+
+Pour mieux examiner la disparité au niveau des prix des logements nous allons créer une nouvelle variable catégorielle qui nous permettra de différencier les biens en quatres sections : Lowcost, Standard, Haute-Gamme et Luxe. Nous observons donc une répartition assez équitable au niveau des différentes catégories de prix de location. 
+
+
+```{r}
+
+listings_bordeaux <- base::subset(listings_bordeaux_1,!is.na(listings_bordeaux_1$reviews_per_month))
+#listings_bordeaux$price <-  as.numeric(listings_bordeaux$price %>% str_sub(start = 2))
+listings_bordeaux <- base::subset(listings_bordeaux,!is.na(listings_bordeaux$price))
+#listings_bordeaux <- base::subset(listings_bordeaux,!is.na(listings_bordeaux$host_total_listings_count))
+listings_bordeaux <- listings_bordeaux_1
+
+listings_bordeaux <-  listings_bordeaux_1 %>% drop_na() %>%
+  mutate(Log1pPrice = log(price))
+```
+
+```{r}
+#Nouveau data 
+ab <- listings_bordeaux %>% mutate(price_group=ifelse(Log1pPrice < 3.8, "Low-cost",
+                                           ifelse(Log1pPrice < 4.10, "Standard",
+                                                  ifelse(Log1pPrice < 4.60, "Haute gamme", "Luxe"
+                                                               ))))
+datata <- data_bordeaux %>% mutate(price_group=ifelse(Log1pPrice < 3.8, "Low-cost",
+                                           ifelse(Log1pPrice < 4.10, "Standard",
+                                                  ifelse(Log1pPrice < 4.60, "Haute gamme", "Luxe"
+                                                               ))))
+
+
+
+
+ab <- ab %>% mutate(price_distri=ifelse(price < 25 , "0-25",
+                                           ifelse(price < 50, "25-50",
+                                              ifelse(price < 75, "50-75",
+                                                     ifelse(price< 100, "75-100",
+                                                        ifelse(price < 200, "100-200",
+                                                               ifelse(price < 400, "200-400", "+400"
+                                                                      )
+                                                               ))))))
+
+
+
+```
+
+
+```{r}
+a1 <- ggplot(ab, aes(x = price_group)) + geom_bar(fill = "purple") + ggtitle("Fréquences des catégories de prix") + xlab("Catégories des logements") + ylab("Nombre de logements") + ylim(c(0,3000))
+a1 + th
+```
+
+Regardons ensuite l'action de ces catégories de prix sur les différents quartiers et villes.
+
+```{r}
+# detection du language de base 
+listings_bordeaux$name <-  as.character(listings_bordeaux$name)
+listings_bordeaux$detected_langue <- sapply(listings_bordeaux$name, detect_language) 
+```
+
+```{r}
+ab_vhp = subset(ab, price_group == "Luxe")
+ab_vlp = subset(ab, price_group == "Low-cost")
+
+n = dim(ab)[1]
+nl = dim(ab_vlp)[1]
+nh <- dim(ab_vhp)[1]
+
+## Corpus format 
+dfa <- data.frame(doc_id = 1:n, text = ab$name, stringsAsFactors = FALSE)
+df_corpusa <- tm::Corpus(DataframeSource(dfa))
+
+dfh <- data.frame(doc_id = 1:nh, text = ab_vhp$name, stringsAsFactors = FALSE)
+df_corpush <- tm::Corpus(DataframeSource(dfh))
+
+dfl <- data.frame(doc_id = 1:nl, text = ab_vlp$name, stringsAsFactors = FALSE)
+df_corpusl <- tm::Corpus(DataframeSource(dfl))
+
+##Token Cleansing
+#suppression des émoticonnes
+#suppression de la ponctuation
+
+df_corpush <- tm_map(df_corpush, removePunctuation)
+df_corpusl <- tm_map(df_corpusl, removePunctuation)
+df_corpusa <- tm_map(df_corpusa, removePunctuation)
+
+#mise en miniscule 
+df_corpush <- tm_map(df_corpush, tolower)
+df_corpusl <- tm_map(df_corpusl, tolower)
+df_corpusa <- tm_map(df_corpusa, tolower)
+
+#suppression des chiffres 
+df_corpush <- tm_map(df_corpush, removeNumbers)
+df_corpusl <- tm_map(df_corpusl, removeNumbers)
+df_corpusa <- tm_map(df_corpusa, removeNumbers)
+
+#suppression des stops words
+df_corpush <- tm_map(df_corpush, removeWords, stopwords("french"))
+df_corpusl <- tm_map(df_corpusl, removeWords, stopwords("french"))
+df_corpusa <- tm_map(df_corpusl, removeWords, stopwords("french"))
+
+df_corpush <- tm_map(df_corpush, removeWords, stopwords("english"))
+df_corpusl <- tm_map(df_corpusl, removeWords, stopwords("english"))
+df_corpusa <- tm_map(df_corpusl, removeWords, stopwords("english"))
+
+
+```
+
+
+```{r}
+dtmh <-DocumentTermMatrix(df_corpush,control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+dtml <-DocumentTermMatrix(df_corpusl,control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+dtma <-DocumentTermMatrix(df_corpusa,control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+
+#print(findFreqTerms(dtmh,300))
+m <- as.matrix(dtma)
+#print(dim(m))
+```
+
+```{r}
+
+freqh <- sort(colSums(as.matrix(dtmh)), decreasing=TRUE)
+freqh_ <- as.data.frame(sort(colSums(as.matrix(dtmh)), decreasing=TRUE)) 
+colnames(freqh_) <- "Fréquences"
+freqh_top10 <- subset(freqh_, Fréquences > 483)
+
+freql <- sort(colSums(as.matrix(dtml)), decreasing=TRUE)
+freql_ <- as.data.frame(sort(colSums(as.matrix(dtml)), decreasing=TRUE)) 
+colnames(freql_) <- "Fréquences"
+freql_top10 <- subset(freql_, Fréquences > 768)
+
+freqa <- sort(colSums(as.matrix(dtma)), decreasing=TRUE)
+freqa_ <- as.data.frame(sort(colSums(as.matrix(dtma)), decreasing=TRUE)) 
+colnames(freqa_) <- "Fréquences"
+freqa_top10 <- subset(freqa_, Fréquences > 529)
+```
+
+```{r}
+#TOP 10 quartier les + chère
+top_10_neighbourhood <- aggregate(list(data_bordeaux$price), list(data_bordeaux$neighbourhood_cleansed), mean)
+colnames(top_10_neighbourhood) <- c("Quartier", "Prix_moyen_par_quartier")
+top_10_neighbourhood <- top_10_neighbourhood[order(top_10_neighbourhood$Prix_moyen_par_quartier),]
+top_10_neighbourhood <- tail(top_10_neighbourhood, 12)
+top_10_neighbourhood <- head(top_10_neighbourhood, 10)
+r <- c()
+for(i in 10:1){r <- c(r, i)}
+row.names(top_10_neighbourhood) <- r
+
+#TOP 10 quartier les - chère
+top_10_neighbourhood_b <- aggregate(list(data_bordeaux$price), list(data_bordeaux$neighbourhood_cleansed), mean)
+colnames(top_10_neighbourhood_b) <- c("Quartier", "Prix_moyen_par_quartier")
+top_10_neighbourhood_b <- top_10_neighbourhood_b[order(top_10_neighbourhood_b$Prix_moyen_par_quartier),]
+top_10_neighbourhood_b <- head(top_10_neighbourhood_b, 10)
+r <- c()
+for(i in 1:10){r <- c(r, i)}
+row.names(top_10_neighbourhood_b) <- r
+```
+
+```{r}
+wfh <- data.frame(word=names(freqh), freq=freqh) 
+wfl <- data.frame(word=names(freql), freq=freql)
+wf <- data.frame(word=names(freqa), freq=freqa)
+
+set.seed(1)   
+
+dark2 <- RColorBrewer::brewer.pal(6, "Dark2")
+
+riri <-  as.data.frame(table(ab$neighbourhood)) %>% arrange(desc(Freq))
+riri <- riri[1:10,1]
+riri1 <-  as.data.frame(table(ab$neighbourhood_group)) %>% arrange(desc(Freq))
+riri1 <- riri1[1:10,1]
+toto <- ab %>% filter(neighbourhood %in% top_10_neighbourhood$Quartier)
+tata <- ab %>% filter(neighbourhood_group %in% riri1)
+a11 <- ggplot(toto, aes(neighbourhood)) + geom_bar(aes(fill = price_group)) + xlab("Quartiers")
+a12 <- ggplot(toto, aes(room_type)) + geom_bar(aes(fill = price_group)) + xlab("Type de logement") 
+a14 <- ggplot(tata, aes(neighbourhood_group)) + geom_bar(aes(fill = price_group)) + xlab("Quartiers")
+tito <- ab %>% filter(neighbourhood %in% top_10_neighbourhood_b$Quartier)
+a15 <- ggplot(tito, aes(neighbourhood)) + geom_bar(aes(fill = price_group)) + xlab("Quartiers")
+
+a11 + theme(axis.text.x = element_text(size = 10, angle = 30)) + ggtitle("Catégories des logements quartiers les plus chères en moyenne")
+
+a15 + theme(axis.text.x = element_text(size = 10, angle = 30)) + ggtitle("Catégories des logements quartiers les moins chères en moyenne")
+
+
+```
+
+
+
+
+Comme initialement remarqué les catégories de biens qui se distinguent dans les différents top 10 des quartiers chères et moins chères sont effectivement "Haut gamme" et "Luxe" d'une part et dautre part "Low-cost". Cela confirme donc notre raisonnement. 
+Cependant les villes ou quartiers chères ne sont pas neccesserement les plus fréquentés par les clients de airbnb.
+
+```{r}
+a14 + theme(axis.text.x = element_text(size = 10, angle = 30)) + ggtitle("Catégories des logements par villes les plus louées en moyenne")
+```
+
+
+
+
+
+En effet Bordeaux est effectivement l'attraction principale sur airbnb, effectivement c'est bel et bien une grande et belle ville touristique de France, donc aucune surprise. Il en découle aussi qu'elle est assez chère comparativement aux villes. 
+
+
+
+Enfin, nous proposons une visualisation graphique et intéractive du prix des biens Airbnb sur une map. A noter que l'echelle à été adapté afin d'être plus detaillée dans les niveau de prix par nuit qui regroupent la quasi totalité des Airbnb.
+
+```{r}
+pal <- colorFactor(palette = rainbow(7),domain = ab$price_distri)
+
+az <- leaflet(data = ab) %>%  # add different provider tiles
+  addProviderTiles(
+    "OpenStreetMap",
+    # give the layer a name
+    group = "OpenStreetMap"
+  ) %>%
+  addProviderTiles(
+    "Stamen.Toner",
+    group = "Stamen.Toner"
+  ) %>%
+  addProviderTiles(
+    "Stamen.Terrain",
+    group = "Stamen.Terrain"
+  ) %>%
+  addProviderTiles(
+    "Esri.WorldStreetMap",
+    group = "Esri.WorldStreetMap"
+  ) %>%
+  addProviderTiles(
+    "CartoDB.Positron",
+    group = "CartoDB.Positron"
+  ) %>%
+  addProviderTiles(
+    "Esri.WorldImagery",
+    group = "Esri.WorldImagery"
+  ) %>%
+  addLayersControl(
+    baseGroups = c(
+      "OpenStreetMap", "Stamen.Toner",
+      "Stamen.Terrain", "Esri.WorldStreetMap", "CartoDB.Positron", "Esri.WorldImagery"), position = "topleft") %>%
+  
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  
+  addCircleMarkers(~longitude, ~latitude, color = ~pal(price_distri), weight = 1, radius=1.5, fillOpacity = 1, opacity = 1,
+label = paste("Annonce:", ab$name)) %>% 
+  
+  addLegend("bottomright", pal = pal, values = ~price_distri,
+            title = "Price",
+            opacity = 1)
+
+az
+```
+
+## Prix en fonction du type de biens et capacité d'accueille 
+
+L'asymétrie au niveau des prix se retrouvent encore une fois ici, Pour regler ce soucis on se permet de ne regarder que les biens Airbnb avec une parix par nuit inferieur à 1000 euros, les biens exeptionnels etant très rare en proportion, on les oculte pour avoir un graphe plus lisible.  Ci-dessous la représentation des distributions de prix en fonction du type de biens.
+
+```{r}
+options(repr.plot.width=5, repr.plot.height=5)
+df <- data.frame(price = data_bordeaux["price"][data_bordeaux["price"] <= 1000], room_type = data_bordeaux["room_type"][data_bordeaux["price"] <= 1000])
+c <- ggplot(data = df, mapping = aes(x = price, fill = room_type)) +
+         geom_density(mapping = aes(fill = room_type), bins = 50, size = 1, color = "black", alpha = .5, size = 1) +
+         theme_minimal() +
+         ylab("Densité") +
+         xlab("Prix") +
+         ggtitle("Histogramme des prix par type <= 1000 euros") +
+         th +
+         theme(legend.position="bottom", legend.text = element_text(colour="black", size=10, 
+                                     face="bold"))
+c
+```
+
+Sans grandes surprise on se rend bien compte de que les Chambre partagées et les chambre privées sont les biens les moins onéreuses, contrairement aux chambres d'hotel et aux biens complet qui sont bien plus chere en moyenne. Cependant les soucis de distribution ne nous permment pas de voir clairement les information, en complément, nous tracons donc également le prix des biens Airbnb en fonction du type de biens avec la transformation logarithmique.
+
+```{r}
+data_bordeaux %>% 
+  ggplot(aes(x=price, fill=room_type)) +
+  geom_density(mapping = aes(fill = room_type), bins = 50, size = 1, color = "black", alpha = .5, size = 1) +
+  th +
+  ylab("Densité") +
+  xlab("Log des Prix") +
+  ggtitle("Histogramme des transformation de prix par type") +
+  theme(legend.position="bottom", legend.text = element_text(colour="black", size=10, face="bold")) +
+  scale_x_log10()
+```
+
+Après avoir effectué cette transformation, nous voyons que les biens les plus accessibles sont les chambres partagées, suivi par les chambres privées puis on y retrouve le gros des biens Airbnb qui sont les appartements et maison entière. Enfin, et de façon plutôt cohérente, ce sont les chambres d'hôtels qui sont les plus chere, ce prix fort est certainement du services annexes proposées par les hôtels. En mettant en relationo les différentes catégories de prix crées et les types de logements nous observons la domination sans faille des logement "Entier/appartement" comparé aux autres type de logements suivis des "chambres privées" et à la traine les "chambres partagées" et "chambres d'hotel". Les catégories de prix confirment l'analyse précédentes, ono peut effectivement bien le distinguer sur la deuxieme figure qui est juste un zoom de la première figure. En effet les hotels et logement entier/appartement sont souvent très chères (domination des catégories "Luxe" et "Haute gamme") tandis que les "chambres partagées" et les "chambres privées" sont moins chères (domination des catégories "Low-cost" et "Standard" )
+
+```{r}
+a12 <- ggplot(tata, aes(room_type)) + geom_bar(aes(fill = price_group)) + xlab("Type de logement") + ggtitle("Zoom") + scale_y_log10()
+a122 <- ggplot(tata, aes(room_type)) + geom_bar(aes(fill = price_group)) + xlab("Type de logement") + ggtitle("Les types de logement en fonction des catégories de prix ")
+a122
+a12
+```
+
+Nous pouvons également voir si le prix des biens Airbnb est en relation direct avec le nombre de personnes qu'il peut accueillir, ce qui est tout à fait logique. 
+
+```{r}
+data_bordeaux %>% 
+  ggplot(aes(x=factor(accommodates), y=price, fill=factor(accommodates))) +
+  geom_boxplot(show.legend = FALSE) + th  + xlab("Nombres de personnes") + ylab("Prix") + ylim(c(0,600)) + ggtitle("Le prix en fonction du nombre de personnes ")
+
+ggplot(datata, aes(accommodates)) + geom_bar(aes(fill = price_group)) + xlab("Nombre de personne") + ggtitle("Logement en fonction du nombre de personnes ") +xlim(c(0,15)) +th
+```
+
+De façon naturel et très intuitive, plus le biens Airbnb est capable d'acceuillir de personnes, plus le prix du bien est élevé. Nous pouvons même déduire une relation purement linéaire entre capacité d'acceuil et prix. Et egalement nous remarquons quand le nombre de personne louant un airbnb est inférieure 3 la catégorie dominante des biens est le "Low-cost" et dès que le nombre apparait supérieure à 4 la catégorie domninate est "Luxe". Tout simplement un grand appartement coutera plus chère et acceuillera plus de personne. Le prix est en corrélation directe avec la capacité d'acceuil
+
+## Prix en fonction des commodités
+
+Nous avons été très intérrésé de voir que bien pour chaque Airbnb, nous avons à disposition une liste non-non exaustivedes commiditées présentes dans les biens proposés. Nous nous sommes alors posé la question de savoir si, d'une part, les commodités présentent dans les biens impactent le prix de la nuit, d'autre part, de quelle façon et avec quelle importance ce prix est affecté. 
+
+```{r}
+#Manipulation chaine de caractères
+data_bordeaux$amenities <- as.character(data_bordeaux$amenities)
+
+words <- data_bordeaux %>% 
+  mutate(amenities = gsub('"','',amenities))
+
+words <- str_split(data_bordeaux$amenities, ',')
+
+all_words <- data.frame(Log1pPrice = rep(data_bordeaux$Log1pPrice, sapply(words, length)), words = unlist(words))
+all_words <- all_words %>% 
+  mutate(words = gsub('[[:punct:]]','',words))
+```
+
+```{r}
+#Groupe par commodités 
+words_grouped <- all_words %>%
+  group_by(words) %>%
+  summarize(Log1pPrice = mean(Log1pPrice, na.rm = TRUE))%>%
+  arrange(desc(Log1pPrice))
+
+#Top 10 commodités
+ggplot(words_grouped[1:10,], aes(x = reorder(words, Log1pPrice), y = Log1pPrice)) +
+  geom_bar(stat = 'identity', fill = "purple") +
+  coord_flip ()+
+  ggtitle('Top 10 Commodités') +
+  xlab('Commoditées ') +
+  ylab('Moyenne du log des prix') +
+  th
+```
+
+Nous imaginons aisément que plus le bien Airbnb dispose de "fonctionnalités", de commodités, ou en tout cas d'atout énoncé dans l'annonce Airbnb, plus le prix sera haut. De par cette première analyse textuelle, nous nous rendons bien compte que les critères tel qu'une terrasse, un parking, le fait d'avoir internet et bien dautre impacte le prix de façon significative. 
+
+## Modélisation statistique pour la variable prix 
+
+Dans cette partie notre but serait de modéliser les catégories de prix en fonction de nos différentes variables explicatives. Dans un premier temps nous essayer de modéliser toutes les catégories à l'aide d'une regression logistique multinomiale et enfin nous allons nous focaliser sur les deux catégories extrèmes i.e "Low-cost" et "Luxe". 
+
+
+### Avec toutes les catégories de prix 
+
+La regression logistique multinomiale ne nous donne cependant pas une erreur test de prédiction satisfaisante i.e 45%. Cependant nous avons pu à l'aide du modèle créé effectué une selection à pas descendante ce qui nous à permi grace au critère de AIC de selectionner les variables que sont : "neighbourhood_group_cleansed,beds+review_scores_rating,room_type,accommodates"
+
+```{r eval=FALSE, include=FALSE}
+library(nnet)
+library(foreign)
+set.seed(646454)
+data_modeling <- datata[,-c(3,8,10,11)] 
+data_modeling <- data_modeling %>% drop_na()
+X <- data_modeling[,-8]
+X$neighbourhood_group_cleansed <- as.factor(X$neighbourhood_group_cleansed)
+Y <- as.factor(data_modeling[,8])
+Y <- relevel(Y, "Standard")
+data_log <- as.data.frame(cbind(Y,X))
+
+####### SPLIT TRAIN TEST########
+s = sample_n(data_log, size = 2000, replace = TRUE)
+trainIndex <- caret::createDataPartition(s$Y, p = .75, 
+                                  list = FALSE, times = 1)
+train = s[trainIndex, ]; #class(train)
+test = s[-trainIndex, ]; #class(test)
+
+#Echantillon Test et Train 
+x_train <- train[-1]
+x_test <- test[-1] 
+y_train <- train$Y
+y_test <- test$Y
+
+data_train <- as.data.frame(cbind(y_train,x_train))
+
+########## MODELISATION ############# 
+m <- multinom(y_train ~ . , data = data_train)
+
+#summary(m)
+
+
+
+#### SELECTION PAS A PAS ############# 
+
+m2 <- step(m)
+
+table(predict(m, x_test),y_test)
+sum(predict(m, x_test) == y_test)/length(y_test)
+
+############## 
+
+m_select <- multinom(y_train ~ neighbourhood_group_cleansed+ beds+review_scores_rating+room_type+accommodates , data = data_train)
+table(predict(m_select, x_test),y_test)
+sum(predict(m_select, x_test) == y_test)/length(y_test)
+
+```
+
+### Avec le Lowcost et le Luxe 
+
+Cette partie concerne en effet l'analyse des deux opposés. A travers une regression logistique binaire nous avons pu modeliser à niveau correct notre moodèle. Nous obtenons après une regression logistique basique un score de bonne prédiction d'environ 92%. Cependant nous pouvons tenter d'augmenter ce score en utilisant soit une matrice de cout, soit des algorithmes stochastiques.
+
+```{r eval=FALSE, include=FALSE}
+set.seed(11)
+data_modeling <- datata[,-c(3,8,10,11)] 
+data_modeling <- data_modeling %>% drop_na() %>% subset(price_group %in% c("Low-cost","Luxe"))
+X <- data_modeling[,-8]
+X$neighbourhood_group_cleansed <- as.factor(X$neighbourhood_group_cleansed)
+Y <- as.factor(data_modeling[,8])
+Y <- relevel(Y, "Luxe")
+data_log <- as.data.frame(cbind(Y,X))
+
+####### SPLIT TRAIN TEST########
+data_log = sample_n(data_log, size = 2000, replace = TRUE)
+trainIndex <- caret::createDataPartition(data_log$Y, p = .75, 
+                                  list = FALSE, times = 1)
+train = data_log[trainIndex, ]; #class(train)
+test = data_log[-trainIndex, ]; #class(test)
+
+#Echantillon Test et Train 
+x_train <- train[-1]
+x_test <- test[-1] 
+y_train <- train$Y
+y_test <- test$Y
+
+data_train <- as.data.frame(cbind(y_train,x_train))
+
+########## MODELISATION ############# 
+m_ <- glm(y_train ~ . , data = data_train, family = binomial(logit))
+m_$coefficients
+#summary(m)
+pred <- predict(m_, x_test)
+predo <- rep(NA,length(pred))
+predo[pred < 0.5] <- "Luxe"
+predo[pred >= 0.5] <- "Low-cost"
+sum(predo == y_test)/length(y_test)
+
+table(predo,y_test)
+```
+
+
+# Etude des liens avec le marché locatif 
+
+Bordeaux est la meilleure ville dans plusieurs domaines notement le travail, tourisme, immobilier, restauration, circulation...
+Sur le premier semestre 2018, l’observatoire de l’immobilier LPI-Se Loger a désigné Bordeaux comme la ville la plus chère de province. A la faveur d’une nouvelle hausse des prix de 3,1 % sur le dernier trimestre, et de 15,4 % sur un an, Bordeaux reste la ville où les prix de l’immobilier sont les plus élevés en province, selon la dernière note de l’observatoire des prix immobiliers LPI-Se Loger. À 4 652 euros/m2, Bordeaux détrône en effet Lyon (4 530 euros), comme le rapporte 20 minutes. D'année en année ces chiffres ne font que grimper ainsi nous le constatons sur l'image suivante.
+
+Bordeaux est aussi la ville qui enregistre la plus forte hausse sur un an, encore devant Lyon (+ 10,3 %) et Angers (+ 7,7 %).
+
+![.](bdx.png) ## mettre un scale  
+
+
+Nous avons donc recuelli les données de l'observatoire dans le but de les mettre en relation avec nos données airbnb. Voici la carte de bordeaux avec les différentes zones de prix du loyer mensuel au $m^2$.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+appart_bdx <- listings_bordeaux %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+  st_cast("POINT")
+#mapView(appart_bdx) 
+```
+
+```{r}
+zone_prix <-  st_read("Base_OP_2019_L3300/L3300_zone_elem_2019.kml", quiet = TRUE)
+zone_prix_groupe <- st_read("Base_OP_2019_L3300/L3300_zone_cal_2019_1.kml", quiet = TRUE)
+manuel <-  data.frame(id = (c("Zone 1: 13€/m2","Zone 2: 12,5€/m2","Zone 3: 12€/m2","Zone 4: 11,7€/m2" ,"Zone 5: 10,9€/m2" ,"Zone 6: 10,1€/m2")))
+toto <- seq(1:10)
+
+
+manuel_sf <- st_sf(manuel, geometry = zone_prix_groupe$geometry)
+
+manuel_tr <-  st_transform(manuel_sf)
+
+
+pal_fun <-  colorFactor(palette = "Blues",domain = manuel_sf$id)
+
+p_popup <-  paste0("<strong>Zone : </strong>", manuel_sf$id)
+
+leaflet(manuel_sf) %>% 
+  addPolygons( stroke = FALSE, # remove polygon borders
+    fillColor = ~pal_fun(id), # set fill color with function from above and value
+    fillOpacity = 0.6, smoothFactor = 0.5, # make it nicer
+    popup = p_popup,
+    group = "Zone Loyer") %>%
+  
+  addTiles(group = "OSM") %>%
+  
+  addProviderTiles("CartoDB.DarkMatter", group = "Carto") %>%
+  
+  addLegend("bottomright",  # location
+            pal=pal_fun,    # palette function
+            values=~id,  # value to be passed to palette function
+            title = 'Zones de prix Loyers')   %>%
+  addLayersControl(baseGroups = c("OSM", "Carto"), 
+                   overlayGroups = c("Zone Loyer"))  
+
+```
+
+
+A cela nous affichons tous les logements airbnb à disposition et ensuite nous superposerons les deux cartes et ferons une analyse subjective.
+
+
+
+```{r}
+#pal <- colorNumeric(palette = rainbow(4), domain = ab$price_group)
+pal <- colorFactor(palette = rainbow(7),domain = ab$price_distri)
+
+
+az <- leaflet(data = ab) %>%  # add different provider tiles
+  addProviderTiles(
+    "OpenStreetMap",
+    # give the layer a name
+    group = "OpenStreetMap"
+  ) %>%
+  addProviderTiles(
+    "Stamen.Toner",
+    group = "Stamen.Toner"
+  ) %>%
+  addProviderTiles(
+    "Stamen.Terrain",
+    group = "Stamen.Terrain"
+  ) %>%
+  addProviderTiles(
+    "Esri.WorldStreetMap",
+    group = "Esri.WorldStreetMap"
+  ) %>%
+  addProviderTiles(
+    "CartoDB.Positron",
+    group = "CartoDB.Positron"
+  ) %>%
+  addProviderTiles(
+    "Esri.WorldImagery",
+    group = "Esri.WorldImagery"
+  ) %>%
+  addLayersControl(
+    baseGroups = c(
+      "OpenStreetMap", "Stamen.Toner",
+      "Stamen.Terrain", "Esri.WorldStreetMap", "CartoDB.Positron", "Esri.WorldImagery"), position = "topleft") %>%
+  
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  
+  addCircleMarkers(~longitude, ~latitude, color = ~pal(price_distri), weight = 1, radius=1.5, fillOpacity = 1, opacity = 1,
+label = paste("Annonce:", ab$name)) %>% 
+  
+  addLegend("bottomright", pal = pal, values = ~price_distri,
+            title = "Price",
+            opacity = 1)
+
+az
+```
+
+
+```{r}
+az1 <-  az %>% 
+  addPolygons( data = manuel_sf, stroke = FALSE, # remove polygon borders
+    fillColor = ~pal_fun(id), # set fill color with function from above and value
+    fillOpacity = 0.6, smoothFactor = 0.5, # make it nicer
+    popup = p_popup,
+    group = "Zone Loyer") %>%
+  
+  addTiles(group = "OSM") %>%
+  
+  addProviderTiles("CartoDB.DarkMatter", group = "Carto") %>%
+  
+  addLegend("topleft",  # location
+            pal=pal_fun,    # palette function
+            values=~manuel_sf$id,  # value to be passed to palette function
+            title = 'Zones de prix Loyers')   %>%
+  addLayersControl(baseGroups = c("OSM", "Carto"), 
+                   overlayGroups = c("Zone Loyer"))  
+
+az1
+
+```
+
+
+BLABLA BLBA BLA BLA 
+
+
+
+# Etude textuel 
+
+Dans cette partie nous allons utilisé le NLP pour pouvoir comprendre les différentes variables dépendant de chaque logement. Il s'agit de l'étude du titre des annonces dans le but de comprendre la distinction entre les appartement "Low-cost" et les "Luxe" et de l'étude des commentaires des clients pour en tirer les sentiments de ceux-ci
+
+## Etude sur le nom titre des annonces Airbnb 
+
+Nous allons donc ensuite effectuer une transformation de nos données textuelles qui se trouve dans les titres des annonces airbnb, pour analyser ce qui rends leur particularité au loyer très inférieure et très supérieure. 
+
+Dans nos données textuelles nous notons la présence de mots récurents. La pluspart des hotes utilisent à priori le meme champ lexical pour décrire leur bien. Nous pouvons ainsi observer le top des mots les plus utilisés par nos hotes et ce particulierement pour les catégories de bien Low-cost et Luxieux.
+
+```{r}
+freqh_plot <- ggplot(freqh_top10) + geom_bar(aes(x = rownames(freqh_top10),y = Fréquences, fill = rownames(freqh_top10)), stat = "identity") +tema + ggtitle("Appartement Luxe") + xlab("Mots les plus utilisés") + theme(axis.text.x = element_text(angle=30))
+freql_plot <- ggplot(freql_top10) + geom_bar(aes(x = rownames(freql_top10),y = Fréquences, fill = rownames(freql_top10)), stat = "identity") + tema + ggtitle("Appartement Lowcost") + xlab("Mots les plus utilisés") + theme(axis.text.x = element_text(angle=30))
+
+freqa_plot <- ggplot(freqa_top10) + geom_bar(aes(x = rownames(freqa_top10),y = Fréquences, fill = rownames(freqa_top10)), stat = "identity") 
+
+plot_grid(freqh_plot, freql_plot)
+```
+
+
+Les bigrams les plus utilisés dans notre jeu de doonnées au niveau des titres 
+
+```{r}
+library(knitr)
+library(kableExtra)
+ab$name <-  as.character(ab$name)
+names <- ab %>%
+ unnest_tokens(bigram, `name`, token = "ngrams", n = 2)
+ 
+ 
+ bigrams_separated <- names %>%
+     separate(bigram, c("word1", "word2"), sep = " ")
+ 
+ bigrams_filtered <- bigrams_separated %>%
+     filter(!word1 %in% stop_words) %>%
+     filter(!word2 %in% stop_words)
+ 
+ bigram_counts <- bigrams_filtered %>% 
+     count(word1, word2, sort = TRUE)
+ df_big <- as.data.frame(bigram_counts)
+df_big <- df_big %>% mutate(both = paste(df_big$word1, df_big$word2, sep = " "))
+
+df_big %>% head()
+```
+
+Chose ainsi faite nous allons représenter un nuage de mots caractéristiques propres aux catégories des logements Lowcost et Luxe. 
+
+```{r , warning=FALSE}
+wordcloud::wordcloud(names(freqh), freqh, min.freq = 200, max.words=100, rot.per=0.2, colors=dark2,scale=c(2.4,1))
+```
+
+
+Nous notifions maison, piscine, bordeaux, villa,loft, jardin, terrasse comme caractéristique des biens à tendence luxieuse. On ne peut s'attendre à mieux car ce sont clairement les différentes atouts q'un logement peut avoir en plus value comparé à la moyenne. Pour les logements Lowcost comme nous le montre le nuage de point ci-dessous les mots apparaissants sont chambre, studio, cosy, petit, centre. Plus le logement est petit plus il en faut des adjectifs convaincant pour appater les loueurs en plus de la minimisation du prix de location.
+
+
+```{r}
+wordcloud::wordcloud(names(freql), freqh, min.freq = 200, max.words=100, rot.per=0.2, colors=dark2,scale=c(2.4,1))
+```
+
+
+Passoons ensuite à la création d'une variable d'interêt en utilisant des critères performances ce qui équivaudrait au revenue minimal engendré par l'hote d'un appartement airbnb.
+Pour la création de notre nouvelle variable on va utiliser les variables : 
+
+    - nombre de location du bien
+    - nombre de nuits minimums et 
+    - prix par nuit 
+Et on nomera la nouvelle variable réponse total_minimum_revenue = [nombre_de_visites] x [prix] x [nombre_de_nuits minimum] ce qui correspond à l'entrée d'argent minimum percue pour un logement. 
+
+```{r}
+#création de la variable réponse 
+ab <- ab %>% mutate(total_min_revenue = price * number_of_reviews * minimum_nights)
+head(ab[,c("name","price","price_group")])
+
+
+
+abg <- ab %>% subset(total_min_revenue > 0) %>% subset(total_min_revenue < 250000)
+
+head(ab[,c("name","total_min_revenue","price_group")])
+#summary(abg$total_net_revenue)
+#qqnorm(log(abg$total_net_revenue))
+```
+
+
+
+
+Nous allons ensuite essayer avec des modeles de machine learning de voir ce qui caractérise notre nouvelle varaible notement à Bordeaux 
+
+```{r}
+
+d <- listings_bordeaux_brut[,c("id","beds", "review_scores_rating", "accommodates")]
+
+abg <- left_join(d, ab, by= "id")
+abg <- abg %>% drop_na()
+
+colnames(abg)
+abg_bordeaux <- abg %>% dplyr::select(total_min_revenue, calculated_host_listings_count, number_of_reviews, availability_365, price_group, beds, room_type,accommodates,review_scores_rating, latitude, longitude, neighbourhood_group)
+
+abg_bordeaux <-  abg_bordeaux %>% subset(neighbourhood_group == "Bordeaux")
+abg_bordeaux <- abg_bordeaux[,-ncol(abg_bordeaux)]
+
+abg_bordeaux <- abg_bordeaux %>% drop_na()
+
+
+#Splitting Train / Test dataset by 80 / 20
+
+set.seed(123)
+smp_size_m <- floor(0.8 * nrow(abg_bordeaux))
+train_ind_m <- sample(seq_len(nrow(abg_bordeaux)), size = smp_size_m)
+train_m <- abg_bordeaux[train_ind_m, ]
+test_m <- abg_bordeaux[-train_ind_m, ]
+```
+
+
+```{r}
+library(MASS)
+
+model_bdx = lm(log(total_min_revenue)~.,data=train_m)
+step_bdx <- stepAIC(model_bdx, direction = "both", trace = FALSE)
+step_bdx$coefficients
+
+summary(model_bdx)
+
+predictionbdx <-  predict(model_bdx, test_m)
+
+RMSE = function(m, o){
+  sqrt(mean((m - o)^2))
+}
+
+RMSE(exp(1)^predictionbdx, exp(1)^log(test_m$total_min_revenue))
+plot(predictionbdx, log(test_m$total_min_revenue))
+```
+
+Finalement notre modèle a un $R^2$ dee 0.47 et un RMSE de 187703. Alors notre model est décalé d'environ 187703 dollars par prévision en moyenne. Nous n'allons donc guère selectionner ce modèle, par manque de sa précision mais il serait utile pour obtenir une liste de variables importantes pour notre variable réponse. 
+
+```{r}
+lmImp <- varImp(model_bdx, scale = FALSE)
+r_nm<-rownames(data.frame(lmImp))
+Imp <- data.frame(lmImp)[,1]
+df_imp <- data.frame(r_nm,Imp)
+df_imp <- df_imp[order(Imp),]
+df_type = data.frame(names(model_bdx$coefficients),as.vector(model_bdx$coefficients))
+
+colnames(df_type) = c("r_nm","Coefficient Value")
+
+df_new = df_imp %>% inner_join(df_type)
+
+
+
+ggplot(subset(df_new, Imp > 2 & `Coefficient Value` < 4), aes(x = reorder(r_nm, -Imp), y = Imp, fill=`Coefficient Value`)) + 
+  geom_bar(stat = "identity")+ theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 10))+ggtitle("Bordeaux Model facteurs") + xlab("Facteurs")
+```
+
+
+Nous remarquons bien que pour avoir plus de revenues il faut avoir un nombre conséquent de commentaires ce qui est totalement logique car plus l'hote à des commentaires au plus positif plus le "loueurs" se sentira en sécurité et confiant de pouvoir louer ce bien. 
+
+
+## Etudes et analyses des sentiments des commentaires des clients 
+
+Dans cette partie notre objectif est d'analyser les sentiments des commentaires des clients sur les locations airbnb dans le but d'y pouvoir identifier les logements avec les meilleurs différentes émotions i.e positive , surprise...
+
+```{r}
+library(kableExtra)
+avis_bordeaux <- reviews_bordeaux
+
+```
+
+```{r}
+#Detectioon de la langue 
+library(googleLanguageR)
+library(cld2)
+
+# detection du language de base et numérotationo des colones 
+avis_bordeaux$comments <-  as.character(avis_bordeaux$comments)
+avis_bordeaux$detected_langue <- sapply(avis_bordeaux$comments, detect_language) 
+
+avis_bordeaux <- subset(avis_bordeaux,detected_langue=="en")
+#dim(avis_bordeaux)
+
+avis_bordeaux$tic <- seq(1:58694)
+
+
+```
+
+
+```{r}
+library(tokenizers)
+library(lexicon)
+library(textdata)
+
+
+
+comments <- avis_bordeaux$comments
+
+
+#un exemple pour la bibliotheque de sentiment nrc et bing 
+c1 <- as.character(comments[433])
+
+
+documents <- tm::Corpus(VectorSource(c1))
+
+documents = tm_map(documents, content_transformer(tolower))
+documents = tm_map(documents, removePunctuation)
+documents = tm_map(documents, removeNumbers)
+documents = tm_map(documents, removeWords, stopwords("english"))
+
+
+c1 <-  tokenize_words(documents[[1]]$content)
+c1 <- as.data.frame(c1) 
+colnames(c1) <-  "word"
+
+c1$word <- as.character(c1$word) 
+ 
+c1_nrc <- c1 %>% inner_join(get_sentiments("nrc"))
+c1_bing  <- c1 %>% inner_join(get_sentiments("bing"))
+########################### realisation de tokens de facons brut pour tous les mots des commentaires en generale 
+
+tokens <- data_frame(text = as.character(avis_bordeaux$comments) ) %>% unnest_tokens(word, text)
+
+tokens_all_nrc <- tokens %>%
+  inner_join(get_sentiments("nrc")) %>% 
+  count(sentiment) %>% 
+  spread(sentiment, n, fill = 0) %>% 
+  mutate(sentiment = positive - negative) 
+
+
+tokens_all_bing <- tokens %>%
+  inner_join(get_sentiments("bing")) %>% 
+  count(sentiment) %>% 
+  spread(sentiment, n, fill = 0) %>% 
+  mutate(sentiment = positive - negative) 
+
+```
+
+
+
+```{r}
+## une fonction qui trouve  le sentiment d'un text en fonction aussi de la library des sentiments 
+
+GetSentiment <- function(file, libra){
+    # tokenize
+    tokens <- data_frame(text = file$comments) %>% unnest_tokens(word, text)
+
+    # get the sentiment from the first text: 
+    sentiment <- tokens %>%
+      inner_join(get_sentiments(libra)) %>% # pull out only sentiment words
+      count(sentiment) %>% # count the # of positive & negative words
+      spread(sentiment, n, fill = 0)  %>% # # of positive words - # of negative owrds
+      mutate(User = file$reviewer_name) %>% # add the name the reviewver
+      mutate(Id_listing = file$listing_id) %>% # add the year
+      mutate(Date = file$date) # add president
+
+    # return our sentiment dataframe
+    return(sentiment)
+}
+
+tutu <- avis_bordeaux[2,]
+#GetSentiment(tutu,"nrc")
+
+```
+
+
+
+
+```{r eval=FALSE, include=FALSE}
+# on va selectionner au hasard 20.000 commentaire soit le 1/3 des coms pour la rapidité de l'algorithme sinon que il est trop long
+
+df_com <-  avis_bordeaux
+#colnames(df_com)
+
+#----------------------------------------------------#
+####         Sample selection           #####
+#----------------------------------------------------#
+
+# sample the data for faster run time
+s_com = sample(1:nrow(df_com), size = 20000, replace = TRUE)
+
+df_com = df_com[s_com,]
+
+#Récuperation des emotions pour tous les commentaires pour les deux librairies 
+dota <- data_frame(negative = NA, positive = NA,  User = as.factor(NA),   Id_listing= NA,  Date = as.factor(NA))
+
+dota_nrc <- data_frame(anticipation = NA,fear = NA, negative = NA, positive = NA, sadness = NA, trust = NA, User = as.factor(NA),   Id_listing= NA,  Date = as.factor(NA) )
+
+
+#get sentiments pour tous les commentaires 
+
+for (i in 1:nrow(df_com)) {
+  fila <- df_com[i,]
+  dota <- full_join(dota, GetSentiment(fila,"bing"))
+  dota_nrc <- full_join(dota_nrc, GetSentiment(fila,"nrc"))
+  
+}
+
+
+#supprimer les NA et transformer en date reel 
+#nrc 
+
+dota_nrc <- dota_nrc[-1,]
+dota_nrc[is.na(dota_nrc)] <- 0
+dota_nrc$Date <- as.Date(dota_nrc$Date, "%Y-%m-%d")
+dota_nrc <- dota_nrc[order(dota_nrc$Date, decreasing=FALSE),]
+
+#bing 
+dota <-  dota[-1,]
+dota[is.na(dota)] <-  0
+#difference entre negative et positive colone sentimet plus il est elevé plus c'est positive 
+dota <-  dota %>% mutate(sentiment = positive - negative) 
+dota$Date <- as.Date(dota$Date, "%Y-%m-%d")
+dota <- dota[order(dota$Date, decreasing=FALSE),]
+
+
+```
+
+Deux libraries de lexique seront utilisées, il s'agit de "bing" et de "nrc". 
+```{r}
+#load(file = "Mehbenjvendredi.RData")
+#oon va essayer de concatener les data pour les type de chambre avec les commentaires 
+
+dota_complet_nrc <- left_join(dota_nrc,ab, by= c("Id_listing"="id")) 
+#table(get_sentiments("nrc")[,2]) %>% kable()
+#colnames(dota_complet_nrc)
+
+dota_complet <- left_join(dota,ab, by= c("Id_listing"="id")) 
+#table(get_sentiments("bing")[,2]) %>% kable()
+#colnames(dota_complet_nrc)
+     
+```
+
+
+
+```{r}
+#total des sentiment de toutes les location airbnb
+#nrc 
+TotalSentiment <- data.frame(colSums(dota_complet_nrc[,c("anger", "anticipation","disgust", "fear","joy", "negative",     "positive",     "sadness",    "surprise",        "trust")]))
+names(TotalSentiment) <- "count"
+TotalSentiment <- cbind("sentiment" = rownames(TotalSentiment), TotalSentiment)
+rownames(TotalSentiment) <- NULL
+#bing 
+
+TotalSentiment_bing <- data.frame(colSums(dota_complet[,c("negative","positive")]))
+names(TotalSentiment_bing) <- "count"
+TotalSentiment_bing <- cbind("sentiment" = rownames(TotalSentiment_bing), TotalSentiment_bing)
+rownames(TotalSentiment_bing) <- NULL
+```
+
+L'analyse des différentes émotions recensées à travers les commentaires des clients des locations airbnb se traduit par les deux graphes ci-dessous : 
+
+```{r}
+ggplot(data = TotalSentiment, aes(x = sentiment, y = count)) +
+  geom_bar(aes(fill = sentiment), stat = "identity") +
+  theme(legend.position = "none") +
+  xlab("Sentiment") + ylab("Total Count") + ggtitle("Total Sentiment Score lexique nrc") + th
+
+ggplot(data = TotalSentiment_bing, aes(x = sentiment, y = count)) +
+  geom_bar(aes(fill = sentiment), stat = "identity") +
+  theme(legend.position = "none") +
+  xlab("Sentiment") + ylab("Total Count") + ggtitle("Total Sentiment Score lexique bing") + th
+
+
+```
+
+
+
+Nous notons que de manière générale les commentaires sont positifs, cela n'est pas étonnant sachant la popularité et l'essor de cette entreprise au cours de ces dernières années.Cependant en utilisant un lexique avec des émotions plus diversifiées nous pouvons appercevoir que en addition au commentaire positif( qui prédomine toujours) nous pouvons y discerner d'autres émotions comme la joie, la confiance, la surprise et l'anticipation. Nous allons donc essayer de recenser suivant ces différentes émotions prédominantes ou non le top 10 des logements.
+
+Tout d'abord nous observons le nuage de mots des différents sentiments. 
+
+```{r}
+library(reshape2)
+library(wordcloud)
+options(repr.plot.width=17, repr.plot.height=17)
+my_colors <- c("#05A4C0", "#85CEDA", "#D2A7D8", "#A67BC5", "#BB1C8B", "#8D266E")
+#biing 
+tokens %>% inner_join(get_sentiments("bing"), by="word")%>%
+    count(word, sentiment, sort=T) %>% 
+    acast(word ~ sentiment, value.var = "n", fill=0) %>% 
+  
+    # wordcloud
+    comparison.cloud(colors=my_colors[c(5, 1)], max.words = 600, title.size = 2,
+                  scale = c(3,.5))
+```
+
+
+
+
+```{r eval=FALSE, include=FALSE}
+#nrc
+tokens %>% inner_join(get_sentiments("nrc"), by="word")%>%
+    count(word, sentiment, sort=T) %>% 
+    acast(word ~ sentiment, value.var = "n", fill=0) %>% 
+  
+    # wordcloud
+    comparison.cloud(colors=my_colors, max.words = 600, title.size = 2,
+                  scale = c(3,.5))
+
+
+
+```
+
+
+```{r}
+#Classement des sentiments par appartement library bing
+
+hote <- unique(dota_complet$Id_listing)
+tuty <- as.data.frame(table(dota_complet$Id_listing)) 
+names(tuty) <- c("Id","count")
+tuty <-  tuty[order(tuty$count, decreasing=FALSE),]
+
+
+
+
+#
+cass <-  split(dota_complet$sentiment,dota_complet$Id_listing)
+cass_ <- lapply(cass, mean)
+
+
+
+cass_ <- as.data.frame(cass_)
+
+
+titre <- names(cass_)
+
+titre <- titre %>% str_sub(start = 2) 
+names(cass_) <- titre
+cass_ <- stack(cass_)
+colnames(cass_) <- c("sentiment_moy", "id")
+
+cass_$id <- (cass_$id)
+
+
+
+dota_complet_moy_sentiment <- dota_complet %>% dplyr::select("Id_listing","name","host_name","neighbourhood_group","latitude","longitude", "room_type","price","minimum_nights","number_of_reviews","reviews_per_month","calculated_host_listings_count", "availability_365","price_group","total_min_revenue" )
+
+dota_complet_moy_sentiment$Id_listing<- as.factor(dota_complet_moy_sentiment$Id_listing)
+
+sentim_doc_moy <- left_join(cass_, dota_complet_moy_sentiment, by= c("id"="Id_listing"))
+
+
+#suppression des doublons
+doublons <- which(duplicated(sentim_doc_moy[,c(2,3,4)])) 
+
+sentim_doc_moy_clean <- sentim_doc_moy[-doublons,]
+
+rownames(sentim_doc_moy_clean) <- NULL
+
+sentim_doc_moy_clean <-  sentim_doc_moy_clean %>% arrange(desc(sentiment_moy))
+#sentim_doc_moy_clean
+sentim_doc_moy_clean <- sentim_doc_moy_clean %>% drop_na()
+top10_sentim <- sentim_doc_moy_clean[1:10,]
+n <- dim(sentim_doc_moy_clean)[1]
+last10_sentim <- sentim_doc_moy_clean[(n-10):n,]
+
+```
+
+
+
+```{r}
+#save.image(file="lol.RData")
+```
+
+## Modelisation des sentiments 
+
+PAS KOMPRIS MAIS OK
+
+# Conclusion 
+
+
